@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TP4 · Wi-Fi Tracker</title>
+<style>
+:root { color-scheme: light; font-family: system-ui, -apple-system, Segoe UI, sans-serif; }
+* { box-sizing:border-box; }
+body { margin:0; background:#f5f7fa; color:#162235; }
+header { background:white; border-bottom:1px solid #e1e6ed; padding:19px max(24px,calc((100vw - 1180px)/2)); display:flex; justify-content:space-between; align-items:center; gap:15px; }
+h1 { margin:0; font-size:21px; }
+small { color:#617084; }
+main { max-width:1180px; margin:27px auto; padding:0 20px; }
+.controls { display:flex; flex-wrap:wrap; gap:12px; align-items:end; margin-bottom:18px; }
+.controls label { display:grid; gap:6px; color:#46566a; font-size:13px; font-weight:600; }
+select, input, button { border:1px solid #d1d9e5; border-radius:8px; padding:10px 11px; font:inherit; background:white; }
+button { cursor:pointer; color:white; background:#2856af; border-color:#2856af; font-weight:600; }
+button:hover { background:#1f4289; }
+.workspace { display:grid; grid-template-columns:minmax(0, 1fr) 250px; gap:16px; }
+.panel { background:white; border:1px solid #e1e6ed; border-radius:12px; padding:16px; }
+canvas { display:block; width:100%; height:520px; border-radius:7px; background:#fafbfd; }
+.panel h2 { margin:0 0 10px; font-size:15px; }
+.stat { padding:12px 0; border-bottom:1px solid #edf0f5; }
+.stat strong { display:block; font-size:23px; margin-top:3px; }
+.hint { color:#69788d; font-size:12px; line-height:1.6; }
+.legend { display:flex; gap:18px; flex-wrap:wrap; margin-top:12px; font-size:13px; color:#46566a; }
+.dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; }
+.notice { margin:14px 0; font-size:13px; color:#69788d; }
+a { color:#2856af; }
+@media(max-width:760px) { .workspace { grid-template-columns:1fr; } canvas {height:380px;} header {padding:16px 20px;} }
+</style>
+</head>
+<body>
+<header><div><h1>TP4 · Tracker Wi-Fi</h1><small>FastAPI + SQLite · repère local en mètres</small></div><a href="/docs">Documentation REST</a></header>
+<main>
+  <div class="controls">
+    <label>Tracker<select id="tracker"><option value="">Aucun tracker</option></select></label>
+    <label>Début<input type="datetime-local" id="start" /></label>
+    <label>Fin<input type="datetime-local" id="end" /></label>
+    <button id="refresh">Actualiser</button>
+  </div>
+  <div class="workspace">
+    <div class="panel">
+      <h2>Plan et trajet estimé</h2>
+      <canvas id="canvas"></canvas>
+      <div class="legend"><span><i class="dot" style="background:#e58a35"></i>Point d’accès Wi-Fi</span><span><i class="dot" style="background:#2b65bb"></i>Trajet</span><span><i class="dot" style="background:#19865d"></i>Dernière position</span></div>
+    </div>
+    <div class="panel">
+      <h2>Résumé</h2>
+      <div class="stat"><small>Points d’accès connus</small><strong id="ap-count">0</strong></div>
+      <div class="stat"><small>Positions affichées</small><strong id="pos-count">0</strong></div>
+      <div class="stat"><small>Dernière position (m)</small><strong id="last-pos">—</strong></div>
+      <div class="stat"><small>Dernier relevé</small><div id="last-time">—</div></div>
+      <p class="hint">Les coordonnées X/Y doivent être saisies pour chaque BSSID via <a href="/docs">POST /access-points</a>. Sans point d’accès référencé, les scans sont enregistrés mais la position reste inconnue.</p>
+      <p class="hint">Le plan est schématique et ne constitue pas une carte géographique. La localisation RSSI est une estimation.</p>
+    </div>
+  </div>
+  <p class="notice" id="status">Chargement…</p>
+</main>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const $ = (id) => document.getElementById(id);
+let aps = [], positions = [];
+const getJson = async (url) => { const res=await fetch(url); if(!res.ok) throw Error(`HTTP ${res.status}`); return res.json(); };
+function redraw() {
+  const ratio = devicePixelRatio || 1;
+  const b = canvas.getBoundingClientRect();
+  canvas.width = Math.round(b.width*ratio); canvas.height = Math.round(b.height*ratio);
+  ctx.scale(ratio,ratio); const w=b.width,h=b.height;
+  ctx.clearRect(0,0,w,h);
+  let xy = [...aps, ...positions];
+  if(!xy.length) { ctx.fillStyle='#728197';ctx.font='15px system-ui';ctx.textAlign='center';ctx.fillText('Ajoutez des points d’accès ou lancez la démo',w/2,h/2);return; }
+  let minX=Math.min(...xy.map(p=>p.x)), maxX=Math.max(...xy.map(p=>p.x));
+  let minY=Math.min(...xy.map(p=>p.y)), maxY=Math.max(...xy.map(p=>p.y));
+  const margin=Math.max(10,0.15*Math.max(maxX-minX,maxY-minY,10));
+  minX-=margin;maxX+=margin;minY-=margin;maxY+=margin;
+  const padding=43, scale=Math.min((w-padding*2)/(maxX-minX),(h-padding*2)/(maxY-minY));
+  const midX=(minX+maxX)/2,midY=(minY+maxY)/2;
+  const P = p => ({x:w/2+(p.x-midX)*scale,y:h/2-(p.y-midY)*scale});
+  ctx.strokeStyle='#e8edf4';ctx.lineWidth=1;
+  for(let i=0;i<=10;i++){let x=padding+(w-2*padding)*i/10,y=padding+(h-2*padding)*i/10;
+    ctx.beginPath();ctx.moveTo(x,padding);ctx.lineTo(x,h-padding);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(padding,y);ctx.lineTo(w-padding,y);ctx.stroke();}
+  ctx.textAlign='left';ctx.fillStyle='#6d7e92';ctx.font='12px system-ui';ctx.fillText('X →',w-46,h-10);ctx.fillText('Y ↑',10,18);
+  aps.forEach(a=> {const p=P(a);ctx.beginPath();ctx.fillStyle='#e58a35';ctx.arc(p.x,p.y,6,0,2*Math.PI);ctx.fill();
+    ctx.fillStyle='#59412a';ctx.font='11px system-ui';ctx.fillText(a.ssid||a.bssid.slice(-8),p.x+9,p.y-7);});
+  if(positions.length) { ctx.beginPath();positions.forEach((a,i)=>{const p=P(a);i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y);});
+    ctx.strokeStyle='#2b65bb';ctx.lineWidth=3;ctx.lineJoin='round';ctx.stroke();
+    positions.forEach((a,i)=>{const p=P(a);ctx.beginPath();ctx.arc(p.x,p.y,i===positions.length-1?7:3,0,2*Math.PI);
+      ctx.fillStyle=i===positions.length-1?'#19865d':'#2b65bb';ctx.fill();});
+  }
+}
+async function refresh() {
+  try {
+    const previous=$('tracker').value;
+    const [accessPoints, trackers] = await Promise.all([getJson('/access-points'),getJson('/trackers')]);
+    aps=accessPoints;
+    $('tracker').innerHTML='<option value="">Aucun tracker</option>';
+    trackers.forEach(t=>{const option=document.createElement('option');option.value=t.tracker_id;option.textContent=t.tracker_id+' ('+t.scan_count+' scans)';$('tracker').append(option);});
+    $('tracker').value=trackers.some(t=>t.tracker_id===previous)?previous:(trackers[0]?.tracker_id||'');
+    await loadPositions();
+  } catch(e) {$('status').textContent='Erreur : '+e.message;}
+}
+async function loadPositions() {
+  try {
+    const id=$('tracker').value;positions=[];
+    if(id) {const query=new URLSearchParams({limit:'10000'});
+      for (const field of ['start','end']) if($(field).value) query.set(field,new Date($(field).value).toISOString());
+      positions=await getJson('/trackers/'+encodeURIComponent(id)+'/positions?'+query.toString());}
+    $('ap-count').textContent=aps.length;
+    $('pos-count').textContent=positions.length;
+    const last=positions[positions.length-1];
+    $('last-pos').textContent=last ? `(${last.x}, ${last.y})` : '—';
+    $('last-time').textContent=last ? new Date(last.estimated_at).toLocaleString('fr-FR') : '—';
+    $('status').textContent=aps.length ? 'Données chargées. Actualisez pour voir les nouveaux relevés.' : 'Aucun point d’accès connu : ajoutez les BSSID et leurs coordonnées via l’API.';
+    redraw();
+  } catch(e){$('status').textContent='Erreur : '+e.message;}
+}
+$('refresh').addEventListener('click',refresh);
+$('tracker').addEventListener('change',loadPositions);
+$('start').addEventListener('change',loadPositions);
+$('end').addEventListener('change',loadPositions);
+window.addEventListener('resize',redraw);
+refresh();
+</script>
+</body>
+</html>
