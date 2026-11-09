@@ -8,6 +8,7 @@
 #   make setup PY=3.11
 #   make run PY=3.11
 #   make run PY=3.11 ARGS="--debug --port 8080"
+#   make run RUN_CMD=...   (ou definir RUN_CMD dans Makefile.project)
 #   make shell PY=3.11
 #   make clean PY=3.11
 #
@@ -37,6 +38,14 @@ ARGS            ?=
 # Utilise des / : Python et Windows les acceptent, et GNU Make les gère mieux.
 VENV_PYTHON := $(VENV_DIR)/Scripts/python.exe
 
+# Commande de lancement generique : par defaut un script Python.
+# Chaque projet peut la remplacer sans modifier ce Makefile reutilisable.
+RUN_CMD ?= "$(VENV_PYTHON)" "$(SRC)" $(ARGS)
+
+# Configuration facultative propre au projet (versionnable) puis au poste.
+-include Makefile.project
+-include Makefile.local
+
 # Les recettes ci-dessous utilisent volontairement la syntaxe cmd.exe.
 ifeq ($(OS),Windows_NT)
 SHELL := cmd.exe
@@ -57,7 +66,7 @@ help:
 	@echo.
 	@echo Commandes principales :
 	@echo   make setup PY=3.11       Cree le venv et installe les dependances
-	@echo   make run PY=3.11         Lance $(SRC)
+	@echo   make run PY=3.11         Lance la commande configuree (script par defaut)
 	@echo   make shell PY=3.11       Ouvre PowerShell avec le venv active
 	@echo   make clean              Supprime le venv de la version memorisee
 	@echo   make clear              Alias de make clean
@@ -79,6 +88,11 @@ help:
 	@echo   REQ=requirements.txt     Fichier de dependances
 	@echo   ARGS="..."               Arguments transmis au programme
 	@echo   VENV_DIR=py3.11          Dossier du venv
+	@echo   RUN_CMD=...              Commande de lancement personnalisable
+	@echo.
+	@echo Configuration facultative :
+	@echo   Makefile.project         Commande propre au projet (a partager sur Git)
+	@echo   Makefile.local           Surcharges propres au poste (a ignorer sur Git)
 	@echo.
 
 # -----------------------------------------------------------------------------
@@ -136,10 +150,11 @@ freeze: venv
 # Execution
 # -----------------------------------------------------------------------------
 # run depend de install : un premier "make run" suffit donc a preparer le projet.
+# Sans configuration, RUN_CMD lance $(SRC).
+# Il peut aussi lancer n'importe quel module / programme de ce venv.
 run: install
-	@if not exist "$(SRC)" (echo [ERREUR] Script principal introuvable : $(SRC) & exit /b 1)
-	@echo [INFO] Execution : $(SRC) $(ARGS)
-	@"$(VENV_PYTHON)" "$(SRC)" $(ARGS)
+	@echo [INFO] Execution : $(RUN_CMD)
+	@$(RUN_CMD)
 
 # Ouvre un nouveau PowerShell avec le venv active.
 shell: venv
@@ -168,6 +183,7 @@ info:
 	@echo   Script         : $(SRC)
 	@echo   Requirements   : $(REQ)
 	@echo   Arguments      : $(ARGS)
+	@echo   Commande run   : $(RUN_CMD)
 	@echo.
 	@if exist "$(VENV_PYTHON)" ("$(VENV_PYTHON)" --version) else (echo Etat du venv   : absent)
 

@@ -1,2 +1,2 @@
 echo off
-git status && git add . && git commit -m "First commit" && git push
+git status && git add . && git commit -m "ajotu nouveau makefile" && git push
