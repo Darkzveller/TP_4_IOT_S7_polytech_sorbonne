@@ -27,6 +27,18 @@
   .toolbar .tracker { width:225px; }
   .toolbar .date { width:185px; }
   .toolbar .location { width:190px; }
+  .place-search { position:relative; flex:1 1 310px; min-width:255px; max-width:425px; z-index:1100; }
+  .place-search label { display:block; margin-bottom:6px; font-size:12px; color:#52657e; font-weight:700; }
+  .place-search-line { display:flex; gap:6px; }
+  .place-search-line input { min-width:0; flex:1; border:1px solid #d3ddeb; background:#fff; border-radius:9px; padding:10px 11px; min-height:39px; color:#192c46; outline:none; }
+  .place-search-line input:focus { border-color:#4386dd; box-shadow:0 0 0 3px #4386dd20; }
+  .place-search-line .btn { white-space:nowrap; }
+  .place-results { position:absolute; top:calc(100% + 5px); left:0; right:0; z-index:1101; max-height:260px; overflow:auto; background:#fff; border:1px solid #dce5f0; border-radius:10px; box-shadow:0 12px 28px rgba(31,58,94,.18); }
+  .place-results[hidden] { display:none; }
+  .place-results button { display:block; width:100%; padding:11px 13px; background:#fff; border:0; border-bottom:1px solid #eef1f6; color:#203750; font-size:12px; line-height:1.45; text-align:left; }
+  .place-results button:hover,.place-results button:focus-visible { background:#eaf2ff; }
+  .place-results .place-credit { padding:7px 12px; color:#718198; font-size:10px; }
+
   .btn { display:inline-flex; align-items:center; justify-content:center; border:1px solid #235eb4; border-radius:9px; min-height:39px; padding:9px 13px; background:#2462bf; color:#fff; font-weight:700; font-size:13px; gap:7px; }
   .btn:hover { background:#174f9f; }
   .btn.secondary { border-color:#d5deea; color:#2f4765; background:#fff; }
@@ -82,7 +94,7 @@
   .empty { font-size:12px; color:#8290a3; padding:16px 10px; }
   @media(max-width:1050px) { .workspace { grid-template-columns:minmax(0,1fr) 320px; } .app { padding:15px; } }
   @media(max-width:850px) { .workspace { grid-template-columns:1fr; }.side { grid-template-columns:1fr 1fr; align-items:start; } .side .panel:first-child { grid-row:span 2; } #map { height:58vh; min-height:400px; } }
-  @media(max-width:570px) { .topbar { padding:14px; }.topbar h1 { font-size:16px; } .app { padding:10px; } .side { grid-template-columns:1fr; }.side .panel:first-child { grid-row:auto; }.toolbar .date { flex:1; min-width:135px; } .toolbar .tracker,.toolbar .location { flex:1; min-width:155px; } #map { min-height:360px; height:55vh; } }
+  @media(max-width:570px) { .place-search { flex-basis:100%; max-width:none; } .topbar { padding:14px; }.topbar h1 { font-size:16px; } .app { padding:10px; } .side { grid-template-columns:1fr; }.side .panel:first-child { grid-row:auto; }.toolbar .date { flex:1; min-width:135px; } .toolbar .tracker,.toolbar .location { flex:1; min-width:155px; } #map { min-height:360px; height:55vh; } }
 </style>
 </head>
 <body>
@@ -95,6 +107,14 @@
     <label class="tracker">Tracker<select id="tracker"><option value="">Aucun tracker</option></select></label>
     <label class="date">Début<input id="start" type="datetime-local"></label>
     <label class="date">Fin<input id="end" type="datetime-local"></label>
+    <form id="place-search" class="place-search" role="search" aria-label="Rechercher une adresse en France">
+      <label for="place-query">Rechercher un lieu en France</label>
+      <div class="place-search-line">
+        <input id="place-query" name="address" type="search" placeholder="Ex. : 4 place Jussieu, Paris" autocomplete="off" minlength="3" maxlength="160" required aria-label="Ville, rue ou adresse">
+        <button class="btn secondary" type="submit" id="place-search-button">Rechercher</button>
+      </div>
+      <div id="place-results" class="place-results" hidden aria-label="Résultats de recherche"></div>
+    </form>
     <label class="location">Aller à<select id="city"><option value="">France entière</option><option value="48.8566,2.3522,12">Paris</option><option value="48.8470,2.3571,17">Sorbonne Université · Jussieu</option><option value="45.7640,4.8357,12">Lyon</option><option value="43.2965,5.3698,12">Marseille</option><option value="43.6047,1.4442,12">Toulouse</option><option value="44.8378,-0.5792,12">Bordeaux</option><option value="47.2184,-1.5536,12">Nantes</option><option value="50.6292,3.0573,12">Lille</option><option value="43.7102,7.2620,12">Nice</option></select></label>
     <button type="button" class="btn secondary" id="refresh">↻ Actualiser</button>
   </section>
@@ -102,11 +122,11 @@
     <div class="panel">
       <div class="mapheading"><h2>Carte de France</h2><button class="btn secondary" id="fit" type="button">Cadrer les points</button></div>
       <div id="map" role="application" aria-label="Carte interactive des points d'accès Wi-Fi"></div>
-      <div class="mapfooter"><div class="legend"><span><i class="orange"></i>Points d'accès</span><span><i class="blue"></i>Trajet estimé</span><span><i class="green"></i>Dernière position</span></div><span class="muted">Cliquez sur la carte pour choisir une position GPS</span></div>
+      <div class="mapfooter"><div class="legend"><span><i class="orange"></i>Points d'accès</span><span><i class="blue"></i>Trajet estimé</span><span><i class="green"></i>Dernière position</span></div><span class="muted">Recherchez un lieu ou cliquez sur la carte pour placer un point d’accès</span></div>
     </div>
     <aside class="side">
       <section class="panel">
-        <div class="sideheader"><h2 id="form-title">Ajouter un point d'accès</h2><p>Choisissez sa position sur la carte, puis indiquez le BSSID du réseau.</p></div>
+        <div class="sideheader"><h2 id="form-title">Ajouter un point d'accès</h2><p>Recherchez une adresse ou cliquez sur la carte, puis indiquez le BSSID du réseau.</p></div>
         <form id="ap-form" class="form">
           <div class="formgrid">
             <label class="full">Nom du réseau (SSID)<input id="ssid" maxlength="128" placeholder="Ex. : Wifi-Campus" autocomplete="off"></label>
@@ -115,7 +135,7 @@
             <label>Longitude<input id="longitude" type="number" min="-180" max="180" step="any" required placeholder="Cliquez sur la carte"></label>
           </div>
           <div class="actions"><button type="submit" class="btn" id="save">Enregistrer</button><button type="button" class="btn secondary" id="new">Nouveau</button><button type="button" class="btn danger" id="delete" hidden>Supprimer</button></div>
-          <p class="help">Astuce : cliquez sur un marqueur orange pour modifier son point d'accès. Vous pouvez aussi le déplacer sur la carte, puis cliquer sur « Enregistrer ».</p>
+          <p class="help">Astuce : recherchez une adresse pour préremplir les coordonnées GPS, ou cliquez sur un marqueur orange pour modifier son point d'accès. Vous pouvez aussi le déplacer sur la carte, puis cliquer sur « Enregistrer ».</p>
         </form>
       </section>
       <section class="panel">
@@ -139,6 +159,82 @@ const $status = $('status');
 const FRANCE = [46.603354, 2.213749];
 let aps = [], positions = [], selectedBssid = null, markers = new Map();
 let map, apLayer, routeLayer, draftMarker;
+const geocodeCache = new Map();
+let lastGeocodeAt = 0;
+function closePlaceResults() { $('place-results').hidden=true; }
+function placeZoom(result) {
+  const kind=(result.addresstype||result.type||'').toLowerCase();
+  if (['house','building','amenity','shop','office','residential'].includes(kind)) return 18;
+  if (['road','street','pedestrian','neighbourhood','suburb','quarter'].includes(kind)) return 16;
+  if (['city','town','village','municipality','hamlet'].includes(kind)) return 13;
+  if (['county','state','region','administrative'].includes(kind)) return 9;
+  return 14;
+}
+function choosePlace(result) {
+  const lat=Number(result.lat), lon=Number(result.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+  map.flyTo([lat,lon],placeZoom(result),{duration:.7});
+  setDraft(lat,lon);
+  closePlaceResults();
+  status('Lieu sélectionné : '+result.display_name+'. Coordonnées préremplies. Vérifiez l’emplacement exact de la borne sur la carte, puis renseignez son BSSID et enregistrez.','success');
+}
+function showPlaceResults(results) {
+  const container=$('place-results');
+  container.replaceChildren();
+  for (const result of results) {
+    const lat=Number(result.lat), lon=Number(result.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    const btn=document.createElement('button');
+    btn.type='button';
+    btn.textContent=result.display_name || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+    btn.addEventListener('click',()=>choosePlace(result));
+    container.append(btn);
+  }
+  const credit=document.createElement('div');
+  credit.className='place-credit';
+  const link=document.createElement('a');
+  link.href='https://www.openstreetmap.org/copyright';
+  link.target='_blank';link.rel='noopener noreferrer';
+  link.textContent='© contributeurs OpenStreetMap';
+  credit.append('Résultats Nominatim · ',link);
+  container.append(credit);
+  container.hidden=false;
+}
+async function searchPlace(event) {
+  event.preventDefault();
+  if (!map) return;
+  closePlaceResults();
+  const query=$('place-query').value.trim();
+  if (query.length<3) {status('Entrez au moins 3 caractères pour rechercher une adresse.','error');return;}
+  const key=query.toLocaleLowerCase('fr').replace(/\s+/g,' ');
+  const button=$('place-search-button');
+  button.disabled=true;
+  button.textContent='Recherche…';
+  try {
+    let results=geocodeCache.get(key);
+    if (!results) {
+      // Nominatim public : recherches manuelles seulement, au plus une requête par seconde pour ce poste.
+      if (Date.now()-lastGeocodeAt<1100) {
+        throw new Error('Attendez une seconde avant de lancer une autre recherche.');
+      }
+      const params=new URLSearchParams({q:query,format:'jsonv2',countrycodes:'fr',limit:'5','accept-language':'fr'});
+      lastGeocodeAt=Date.now();
+      const response=await fetch('https://nominatim.openstreetmap.org/search?'+params.toString(),{
+        headers:{Accept:'application/json'},referrerPolicy:'strict-origin-when-cross-origin'
+      });
+      if (!response.ok) throw new Error(`Service de recherche indisponible (HTTP ${response.status}).`);
+      results=await response.json();
+      if (!Array.isArray(results)) throw new Error('Réponse inattendue du service de recherche.');
+      if (geocodeCache.size>=30) geocodeCache.delete(geocodeCache.keys().next().value);
+      geocodeCache.set(key,results);
+    }
+    if (!results.length) {status(`Aucun lieu trouvé en France pour « ${query} ». Essayez avec la ville et le nom de la rue.`, 'error');return;}
+    showPlaceResults(results);
+    status(`${results.length} résultat(s) pour « ${query} ». Choisissez le lieu dans la liste sous la barre de recherche.`);
+  } catch(e) {status('Recherche impossible : '+e.message+' Vérifiez votre connexion Internet.','error');}
+  finally {button.disabled=false;button.textContent='Rechercher';}
+}
+
 function status(message, type='info') { $status.textContent=message; $status.className = type==='info'?'':type; }
 function apiErrorMessage(data, fallback) {
   if (typeof data?.detail === 'string') return data.detail;
@@ -306,6 +402,9 @@ function init() {
   }).addTo(map);
   apLayer=L.layerGroup().addTo(map);routeLayer=L.layerGroup().addTo(map);
   map.on('click', e=>{setDraft(e.latlng.lat,e.latlng.lng);status('Coordonnées sélectionnées. Renseignez le BSSID et cliquez sur « Enregistrer ».');});
+  $('place-search').addEventListener('submit',searchPlace);
+  $('place-query').addEventListener('keydown',event=>{if(event.key==='Escape') closePlaceResults();});
+  document.addEventListener('click',event=>{if(!$('place-search').contains(event.target)) closePlaceResults();});
   $('ap-form').addEventListener('submit',saveAP);
   $('new').addEventListener('click',()=>{resetForm();status('Nouveau point : cliquez sur la carte pour choisir sa position.');$('ssid').focus();});
   $('delete').addEventListener('click',deleteAP);
