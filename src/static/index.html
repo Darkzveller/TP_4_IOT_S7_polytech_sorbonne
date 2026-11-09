@@ -1,129 +1,331 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="fr">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>TP4 · Wi-Fi Tracker</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>TP4 IoT · Carte des points d'accès Wi-Fi</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <style>
-:root { color-scheme: light; font-family: system-ui, -apple-system, Segoe UI, sans-serif; }
-* { box-sizing:border-box; }
-body { margin:0; background:#f5f7fa; color:#162235; }
-header { background:white; border-bottom:1px solid #e1e6ed; padding:19px max(24px,calc((100vw - 1180px)/2)); display:flex; justify-content:space-between; align-items:center; gap:15px; }
-h1 { margin:0; font-size:21px; }
-small { color:#617084; }
-main { max-width:1180px; margin:27px auto; padding:0 20px; }
-.controls { display:flex; flex-wrap:wrap; gap:12px; align-items:end; margin-bottom:18px; }
-.controls label { display:grid; gap:6px; color:#46566a; font-size:13px; font-weight:600; }
-select, input, button { border:1px solid #d1d9e5; border-radius:8px; padding:10px 11px; font:inherit; background:white; }
-button { cursor:pointer; color:white; background:#2856af; border-color:#2856af; font-weight:600; }
-button:hover { background:#1f4289; }
-.workspace { display:grid; grid-template-columns:minmax(0, 1fr) 250px; gap:16px; }
-.panel { background:white; border:1px solid #e1e6ed; border-radius:12px; padding:16px; }
-canvas { display:block; width:100%; height:520px; border-radius:7px; background:#fafbfd; }
-.panel h2 { margin:0 0 10px; font-size:15px; }
-.stat { padding:12px 0; border-bottom:1px solid #edf0f5; }
-.stat strong { display:block; font-size:23px; margin-top:3px; }
-.hint { color:#69788d; font-size:12px; line-height:1.6; }
-.legend { display:flex; gap:18px; flex-wrap:wrap; margin-top:12px; font-size:13px; color:#46566a; }
-.dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; }
-.notice { margin:14px 0; font-size:13px; color:#69788d; }
-a { color:#2856af; }
-@media(max-width:760px) { .workspace { grid-template-columns:1fr; } canvas {height:380px;} header {padding:16px 20px;} }
+  :root { font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif; background:#f3f6fb; color:#132238; font-synthesis:none; }
+  * { box-sizing:border-box; }
+  body { margin:0; min-width:320px; }
+  button,input,select { font:inherit; }
+  button { cursor:pointer; }
+  button:disabled { cursor:not-allowed; opacity:.55; }
+  a { color:#18549c; }
+  .topbar { display:flex; justify-content:space-between; align-items:center; gap:18px; padding:15px 28px; background:#fff; border-bottom:1px solid #dfe6f0; }
+  .topbar h1 { margin:0; font-size:19px; letter-spacing:-.35px; }
+  .topbar p { margin:4px 0 0; color:#758399; font-size:12px; }
+  .topbar a { font-size:13px; text-decoration:none; font-weight:650; white-space:nowrap; }
+  .tag { display:inline-block; padding:4px 8px; border-radius:6px; background:#e6f3ed; color:#237553; font-size:11px; font-weight:700; margin-left:9px; vertical-align:2px; }
+  .app { max-width:1600px; margin:0 auto; padding:20px 22px 26px; }
+  .toolbar { display:flex; gap:13px; flex-wrap:wrap; align-items:end; margin-bottom:14px; }
+  .toolbar label,.formgrid label { display:grid; gap:6px; font-size:12px; color:#52657e; font-weight:700; }
+  .toolbar select,.toolbar input,.formgrid input { border:1px solid #d3ddeb; background:#fff; border-radius:9px; padding:10px 11px; color:#192c46; min-height:39px; outline:none; width:100%; }
+  .toolbar select:focus,.toolbar input:focus,.formgrid input:focus { border-color:#4386dd; box-shadow:0 0 0 3px #4386dd20; }
+  .toolbar .tracker { width:225px; }
+  .toolbar .date { width:185px; }
+  .toolbar .location { width:190px; }
+  .btn { display:inline-flex; align-items:center; justify-content:center; border:1px solid #235eb4; border-radius:9px; min-height:39px; padding:9px 13px; background:#2462bf; color:#fff; font-weight:700; font-size:13px; gap:7px; }
+  .btn:hover { background:#174f9f; }
+  .btn.secondary { border-color:#d5deea; color:#2f4765; background:#fff; }
+  .btn.secondary:hover { background:#eef3fb; }
+  .btn.danger { color:#ae3535; border-color:#eab8b8; background:#fff; }
+  .btn.danger:hover { background:#fff3f3; }
+  .workspace { display:grid; grid-template-columns:minmax(0,1fr) 355px; gap:15px; align-items:start; }
+  .panel { background:#fff; border:1px solid #e0e7f0; box-shadow:0 4px 22px rgba(31,58,94,.035); border-radius:14px; overflow:hidden; }
+  .mapheading { display:flex; justify-content:space-between; align-items:center; padding:13px 16px; gap:8px; }
+  h2 { font-size:14px; margin:0; letter-spacing:-.15px; }
+  .muted { color:#74859d; font-size:12px; }
+  #map { height:min(66vh,670px); min-height:450px; width:100%; background:#d9e7f4; }
+  .mapfooter { padding:12px 16px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; align-items:center; }
+  .legend { display:flex; gap:15px; flex-wrap:wrap; font-size:12px; color:#526278; }
+  .legend i { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; }
+  .legend .orange { background:#e17e28; }.legend .blue { background:#306fc8; }.legend .green { background:#16835a; }
+  .side { display:grid; gap:14px; }
+  .sideheader { padding:15px 17px 0; }
+  .sideheader p { margin:6px 0 0; color:#718198; font-size:12px; line-height:1.5; }
+  .form { padding:13px 17px 16px; }
+  .formgrid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .formgrid .full { grid-column:1/-1; }
+  .formgrid input:read-only { color:#5e7290; background:#f7f9fc; }
+  .actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }
+  .actions .btn { flex:1; }
+  #delete { flex:0 0 auto; }
+  .help { background:#f1f6ff; border-radius:9px; color:#3c6088; padding:10px 11px; font-size:12px; line-height:1.55; margin:12px 0 0; }
+  .listhead { padding:14px 17px 11px; display:flex; justify-content:space-between; align-items:center; }
+  .list { max-height:215px; overflow:auto; padding:0 8px 8px; }
+  .apitem { border:0; background:#fff; display:flex; text-align:left; padding:10px 9px; width:100%; gap:10px; align-items:center; border-radius:8px; }
+  .apitem:hover,.apitem.active { background:#eaf2ff; }
+  .apitem .point { height:12px; width:12px; border-radius:50%; background:#db852c; flex:0 0 12px; }
+  .apitem .point.unplaced { background:#b7c0cb; }
+  .apdetails { flex:1; min-width:0; }
+  .apdetails strong { display:block; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .apdetails small { color:#8090a5; font-size:11px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
+  .numbadge { border-radius:30px; background:#edf3fa; font-size:11px; padding:4px 9px; color:#59708a; font-weight:700; }
+  .stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); padding:14px 17px 17px; gap:9px; }
+  .stat { border:1px solid #e5ebf4; background:#f9fbfe; border-radius:10px; padding:10px; }
+  .stat strong { font-size:21px; display:block; }
+  .stat span { font-size:10px; color:#72839a; line-height:1.4; display:block; }
+  .statline { padding:0 17px 15px; font-size:12px; color:#697c95; line-height:1.5; }
+  #status { margin:13px 0 0; border-radius:9px; padding:11px 13px; font-size:12px; line-height:1.5; background:#e9f2ff; color:#245a9d; }
+  #status.error { background:#ffeded; color:#a33636; }
+  #status.success { background:#e5f5ed; color:#196d4e; }
+  .leaflet-container { font-family:inherit; }
+  .ap-marker { position:relative; background:#da7c27; border:3px solid white; width:25px; height:25px; border-radius:50% 50% 50% 0; transform:rotate(-45deg); box-shadow:0 2px 10px #0004; }
+  .ap-marker.selected { background:#285db1; }
+  .map-tip-title { font-weight:700; font-size:13px; }
+  .popup-body { font-size:12px; line-height:1.6; }
+  .popup-body code { font-size:11px; }
+  .popup-body button { display:inline-block; padding:6px 9px; border:0; color:white; background:#2462bf; border-radius:6px; margin-top:8px; font-size:12px; }
+  .empty { font-size:12px; color:#8290a3; padding:16px 10px; }
+  @media(max-width:1050px) { .workspace { grid-template-columns:minmax(0,1fr) 320px; } .app { padding:15px; } }
+  @media(max-width:850px) { .workspace { grid-template-columns:1fr; }.side { grid-template-columns:1fr 1fr; align-items:start; } .side .panel:first-child { grid-row:span 2; } #map { height:58vh; min-height:400px; } }
+  @media(max-width:570px) { .topbar { padding:14px; }.topbar h1 { font-size:16px; } .app { padding:10px; } .side { grid-template-columns:1fr; }.side .panel:first-child { grid-row:auto; }.toolbar .date { flex:1; min-width:135px; } .toolbar .tracker,.toolbar .location { flex:1; min-width:155px; } #map { min-height:360px; height:55vh; } }
 </style>
 </head>
 <body>
-<header><div><h1>TP4 · Tracker Wi-Fi</h1><small>FastAPI + SQLite · repère local en mètres</small></div><a href="/docs">Documentation REST</a></header>
-<main>
-  <div class="controls">
-    <label>Tracker<select id="tracker"><option value="">Aucun tracker</option></select></label>
-    <label>Début<input type="datetime-local" id="start" /></label>
-    <label>Fin<input type="datetime-local" id="end" /></label>
-    <button id="refresh">Actualiser</button>
-  </div>
-  <div class="workspace">
+<header class="topbar">
+  <div><h1>TP4 IoT · Localisation Wi-Fi <span class="tag">FastAPI · Local</span></h1><p>Carte interactive OpenStreetMap · Gestion des points d'accès et trajets estimés</p></div>
+  <a href="/docs" target="_blank" rel="noopener noreferrer">Documentation API ↗</a>
+</header>
+<main class="app">
+  <section class="toolbar" aria-label="Filtres et navigation">
+    <label class="tracker">Tracker<select id="tracker"><option value="">Aucun tracker</option></select></label>
+    <label class="date">Début<input id="start" type="datetime-local"></label>
+    <label class="date">Fin<input id="end" type="datetime-local"></label>
+    <label class="location">Aller à<select id="city"><option value="">France entière</option><option value="48.8566,2.3522,12">Paris</option><option value="48.8470,2.3571,17">Sorbonne Université · Jussieu</option><option value="45.7640,4.8357,12">Lyon</option><option value="43.2965,5.3698,12">Marseille</option><option value="43.6047,1.4442,12">Toulouse</option><option value="44.8378,-0.5792,12">Bordeaux</option><option value="47.2184,-1.5536,12">Nantes</option><option value="50.6292,3.0573,12">Lille</option><option value="43.7102,7.2620,12">Nice</option></select></label>
+    <button type="button" class="btn secondary" id="refresh">↻ Actualiser</button>
+  </section>
+  <section class="workspace">
     <div class="panel">
-      <h2>Plan et trajet estimé</h2>
-      <canvas id="canvas"></canvas>
-      <div class="legend"><span><i class="dot" style="background:#e58a35"></i>Point d’accès Wi-Fi</span><span><i class="dot" style="background:#2b65bb"></i>Trajet</span><span><i class="dot" style="background:#19865d"></i>Dernière position</span></div>
+      <div class="mapheading"><h2>Carte de France</h2><button class="btn secondary" id="fit" type="button">Cadrer les points</button></div>
+      <div id="map" role="application" aria-label="Carte interactive des points d'accès Wi-Fi"></div>
+      <div class="mapfooter"><div class="legend"><span><i class="orange"></i>Points d'accès</span><span><i class="blue"></i>Trajet estimé</span><span><i class="green"></i>Dernière position</span></div><span class="muted">Cliquez sur la carte pour choisir une position GPS</span></div>
     </div>
-    <div class="panel">
-      <h2>Résumé</h2>
-      <div class="stat"><small>Points d’accès connus</small><strong id="ap-count">0</strong></div>
-      <div class="stat"><small>Positions affichées</small><strong id="pos-count">0</strong></div>
-      <div class="stat"><small>Dernière position (m)</small><strong id="last-pos">—</strong></div>
-      <div class="stat"><small>Dernier relevé</small><div id="last-time">—</div></div>
-      <p class="hint">Les coordonnées X/Y doivent être saisies pour chaque BSSID via <a href="/docs">POST /access-points</a>. Sans point d’accès référencé, les scans sont enregistrés mais la position reste inconnue.</p>
-      <p class="hint">Le plan est schématique et ne constitue pas une carte géographique. La localisation RSSI est une estimation.</p>
-    </div>
-  </div>
-  <p class="notice" id="status">Chargement…</p>
+    <aside class="side">
+      <section class="panel">
+        <div class="sideheader"><h2 id="form-title">Ajouter un point d'accès</h2><p>Choisissez sa position sur la carte, puis indiquez le BSSID du réseau.</p></div>
+        <form id="ap-form" class="form">
+          <div class="formgrid">
+            <label class="full">Nom du réseau (SSID)<input id="ssid" maxlength="128" placeholder="Ex. : Wifi-Campus" autocomplete="off"></label>
+            <label class="full">Adresse MAC du point d'accès (BSSID)<input id="bssid" required maxlength="17" placeholder="AA:BB:CC:DD:EE:FF" autocomplete="off" spellcheck="false"></label>
+            <label>Latitude<input id="latitude" type="number" min="-90" max="90" step="any" required placeholder="Cliquez sur la carte"></label>
+            <label>Longitude<input id="longitude" type="number" min="-180" max="180" step="any" required placeholder="Cliquez sur la carte"></label>
+          </div>
+          <div class="actions"><button type="submit" class="btn" id="save">Enregistrer</button><button type="button" class="btn secondary" id="new">Nouveau</button><button type="button" class="btn danger" id="delete" hidden>Supprimer</button></div>
+          <p class="help">Astuce : cliquez sur un marqueur orange pour modifier son point d'accès. Vous pouvez aussi le déplacer sur la carte, puis cliquer sur « Enregistrer ».</p>
+        </form>
+      </section>
+      <section class="panel">
+        <div class="listhead"><h2>Points d'accès Wi-Fi</h2><span id="ap-list-count" class="numbadge">0</span></div>
+        <div class="list" id="ap-list"><p class="empty">Chargement…</p></div>
+      </section>
+      <section class="panel">
+        <div class="sideheader"><h2>État de la localisation</h2></div>
+        <div class="stats"><div class="stat"><strong id="ap-count">0</strong><span>AP géolocalisés</span></div><div class="stat"><strong id="pos-count">0</strong><span>Positions sur la carte</span></div><div class="stat"><strong id="local-count">0</strong><span>Anciennes positions X/Y</span></div></div>
+        <div class="statline"><span id="last-time">Aucun trajet pour le moment.</span><div style="margin-top:8px">La position est estimée à partir des RSSI et des BSSID connus. Elle ne correspond pas à une mesure GPS.</div></div>
+      </section>
+    </aside>
+  </section>
+  <div id="status" role="status" aria-live="polite">Chargement des données…</div>
 </main>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script>
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-const $ = (id) => document.getElementById(id);
-let aps = [], positions = [];
-const getJson = async (url) => { const res=await fetch(url); if(!res.ok) throw Error(`HTTP ${res.status}`); return res.json(); };
-function redraw() {
-  const ratio = devicePixelRatio || 1;
-  const b = canvas.getBoundingClientRect();
-  canvas.width = Math.round(b.width*ratio); canvas.height = Math.round(b.height*ratio);
-  ctx.scale(ratio,ratio); const w=b.width,h=b.height;
-  ctx.clearRect(0,0,w,h);
-  let xy = [...aps, ...positions];
-  if(!xy.length) { ctx.fillStyle='#728197';ctx.font='15px system-ui';ctx.textAlign='center';ctx.fillText('Ajoutez des points d’accès ou lancez la démo',w/2,h/2);return; }
-  let minX=Math.min(...xy.map(p=>p.x)), maxX=Math.max(...xy.map(p=>p.x));
-  let minY=Math.min(...xy.map(p=>p.y)), maxY=Math.max(...xy.map(p=>p.y));
-  const margin=Math.max(10,0.15*Math.max(maxX-minX,maxY-minY,10));
-  minX-=margin;maxX+=margin;minY-=margin;maxY+=margin;
-  const padding=43, scale=Math.min((w-padding*2)/(maxX-minX),(h-padding*2)/(maxY-minY));
-  const midX=(minX+maxX)/2,midY=(minY+maxY)/2;
-  const P = p => ({x:w/2+(p.x-midX)*scale,y:h/2-(p.y-midY)*scale});
-  ctx.strokeStyle='#e8edf4';ctx.lineWidth=1;
-  for(let i=0;i<=10;i++){let x=padding+(w-2*padding)*i/10,y=padding+(h-2*padding)*i/10;
-    ctx.beginPath();ctx.moveTo(x,padding);ctx.lineTo(x,h-padding);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(padding,y);ctx.lineTo(w-padding,y);ctx.stroke();}
-  ctx.textAlign='left';ctx.fillStyle='#6d7e92';ctx.font='12px system-ui';ctx.fillText('X →',w-46,h-10);ctx.fillText('Y ↑',10,18);
-  aps.forEach(a=> {const p=P(a);ctx.beginPath();ctx.fillStyle='#e58a35';ctx.arc(p.x,p.y,6,0,2*Math.PI);ctx.fill();
-    ctx.fillStyle='#59412a';ctx.font='11px system-ui';ctx.fillText(a.ssid||a.bssid.slice(-8),p.x+9,p.y-7);});
-  if(positions.length) { ctx.beginPath();positions.forEach((a,i)=>{const p=P(a);i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y);});
-    ctx.strokeStyle='#2b65bb';ctx.lineWidth=3;ctx.lineJoin='round';ctx.stroke();
-    positions.forEach((a,i)=>{const p=P(a);ctx.beginPath();ctx.arc(p.x,p.y,i===positions.length-1?7:3,0,2*Math.PI);
-      ctx.fillStyle=i===positions.length-1?'#19865d':'#2b65bb';ctx.fill();});
-  }
+'use strict';
+const $ = id => document.getElementById(id);
+const $status = $('status');
+const FRANCE = [46.603354, 2.213749];
+let aps = [], positions = [], selectedBssid = null, markers = new Map();
+let map, apLayer, routeLayer, draftMarker;
+function status(message, type='info') { $status.textContent=message; $status.className = type==='info'?'':type; }
+function apiErrorMessage(data, fallback) {
+  if (typeof data?.detail === 'string') return data.detail;
+  if (Array.isArray(data?.detail)) return data.detail.map(item=>item.msg||'Donnée invalide').join(' ; ');
+  return fallback;
 }
-async function refresh() {
-  try {
-    const previous=$('tracker').value;
-    const [accessPoints, trackers] = await Promise.all([getJson('/access-points'),getJson('/trackers')]);
-    aps=accessPoints;
-    $('tracker').innerHTML='<option value="">Aucun tracker</option>';
-    trackers.forEach(t=>{const option=document.createElement('option');option.value=t.tracker_id;option.textContent=t.tracker_id+' ('+t.scan_count+' scans)';$('tracker').append(option);});
-    $('tracker').value=trackers.some(t=>t.tracker_id===previous)?previous:(trackers[0]?.tracker_id||'');
-    await loadPositions();
-  } catch(e) {$('status').textContent='Erreur : '+e.message;}
+async function api(url, options) {
+  const response = await fetch(url, options);
+  if (!response.ok) {
+    const data = await response.json().catch(()=>null);
+    throw new Error(apiErrorMessage(data, `Erreur HTTP ${response.status}`));
+  }
+  return response.status===204 ? null : response.json();
+}
+const coordsValid = ap => Number.isFinite(ap.latitude) && Number.isFinite(ap.longitude);
+function iconFor(selected) {
+  return L.divIcon({className:'', html:`<div class="ap-marker${selected?' selected':''}"></div>`, iconSize:[27,27], iconAnchor:[12,24]});
+}
+function setDraft(lat, lng) {
+  $('latitude').value = Number(lat).toFixed(7);
+  $('longitude').value = Number(lng).toFixed(7);
+  if (!draftMarker) {
+    draftMarker = L.circleMarker([lat,lng], {radius:7,color:'#285db1',weight:2,dashArray:'4,3',fillColor:'#9bc1fb',fillOpacity:.65}).addTo(map);
+  } else draftMarker.setLatLng([lat,lng]);
+}
+function clearDraft() { if (draftMarker) { map.removeLayer(draftMarker); draftMarker=null; } }
+function resetForm() {
+  selectedBssid = null;
+  $('ap-form').reset();
+  $('bssid').readOnly=false;
+  $('delete').hidden=true;
+  $('form-title').textContent='Ajouter un point d\'accès';
+  clearDraft();
+  renderAPs();
+}
+function selectAP(ap, moveMap=true) {
+  selectedBssid=ap.bssid;
+  $('form-title').textContent='Modifier un point d\'accès';
+  $('ssid').value=ap.ssid||'';
+  $('bssid').value=ap.bssid;
+  $('bssid').readOnly=true;
+  $('delete').hidden=false;
+  if (coordsValid(ap)) {
+    setDraft(ap.latitude,ap.longitude);
+    if (moveMap) map.flyTo([ap.latitude,ap.longitude],Math.max(map.getZoom(),15),{duration:.5});
+  } else { $('latitude').value=''; $('longitude').value=''; clearDraft(); }
+  renderAPs();
+}
+function popupContent(ap) {
+  const root=document.createElement('div');root.className='popup-body';
+  const title=document.createElement('div');title.className='map-tip-title';title.textContent=ap.ssid||'Réseau sans nom';root.appendChild(title);
+  const mac=document.createElement('code');mac.textContent=ap.bssid;root.appendChild(mac);
+  const br=document.createElement('div');br.textContent=`${ap.latitude.toFixed(6)}, ${ap.longitude.toFixed(6)}`;root.appendChild(br);
+  const btn=document.createElement('button');btn.type='button';btn.textContent='Modifier ce point';btn.addEventListener('click',()=>{selectAP(ap,false);map.closePopup();});root.appendChild(btn);
+  return root;
+}
+function renderAPs() {
+  apLayer.clearLayers();markers=new Map();
+  const container=$('ap-list');container.replaceChildren();
+  const sorted=[...aps].sort((a,b)=>(a.ssid||a.bssid).localeCompare(b.ssid||b.bssid,'fr'));
+  $('ap-list-count').textContent=String(aps.length);
+  if (!sorted.length) { const e=document.createElement('p');e.className='empty';e.textContent='Aucun point enregistré. Cliquez sur la carte pour commencer.';container.append(e); }
+  for (const ap of sorted) {
+    const placed=coordsValid(ap);
+    const row=document.createElement('button');row.type='button';row.className='apitem'+(ap.bssid===selectedBssid?' active':'');
+    const pin=document.createElement('span');pin.className='point'+(placed?'':' unplaced');
+    const txt=document.createElement('span');txt.className='apdetails';
+    const name=document.createElement('strong');name.textContent=ap.ssid||'Réseau sans nom';
+    const sub=document.createElement('small');sub.textContent=placed ? ap.bssid : `${ap.bssid} · À placer sur la carte`;
+    txt.append(name,sub);row.append(pin,txt);row.addEventListener('click',()=>{selectAP(ap);const m=markers.get(ap.bssid);if(m)m.openPopup();});container.append(row);
+    if (!placed) continue;
+    const marker=L.marker([ap.latitude,ap.longitude],{icon:iconFor(ap.bssid===selectedBssid),draggable:true,title:ap.ssid||ap.bssid});
+    marker.bindPopup(popupContent(ap));
+    marker.on('click',()=>selectAP(ap,false));
+    marker.on('dragend',()=>{
+      selectAP(ap,false);
+      const point=marker.getLatLng();setDraft(point.lat,point.lng);
+      status(`Position de ${ap.ssid||ap.bssid} déplacée. Cliquez sur « Enregistrer » pour sauvegarder.`);
+    });
+    apLayer.addLayer(marker);markers.set(ap.bssid,marker);
+  }
+  $('ap-count').textContent=aps.filter(coordsValid).length;
+}
+function renderPositions() {
+  routeLayer.clearLayers();
+  const located=positions.filter(coordsValid);
+  const legacy=positions.length-located.length;
+  $('local-count').textContent=legacy;
+  $('pos-count').textContent=located.length;
+  const last=located.at(-1);
+  $('last-time').textContent=last ? `Dernier relevé : ${new Date(last.estimated_at).toLocaleString('fr-FR')} (${last.ap_count} AP)` : 'Aucune position GPS estimée pour la période choisie.';
+  if (located.length>=2) L.polyline(located.map(p=>[p.latitude,p.longitude]),{color:'#3377cd',weight:4,opacity:.8}).addTo(routeLayer);
+  located.forEach((pos,i)=>{
+    const isLast=i===located.length-1;
+    const marker=L.circleMarker([pos.latitude,pos.longitude],{radius:isLast?8:4,color:isLast?'#127d57':'#2f6ebd',weight:isLast?3:1,fillColor:isLast?'#23aa70':'#5a99e6',fillOpacity:.95});
+    const msg=document.createElement('div');msg.textContent=`${new Date(pos.estimated_at).toLocaleString('fr-FR')} · ${pos.ap_count} AP · Position estimée`;
+    marker.bindPopup(msg);marker.addTo(routeLayer);
+  });
 }
 async function loadPositions() {
-  try {
-    const id=$('tracker').value;positions=[];
-    if(id) {const query=new URLSearchParams({limit:'10000'});
-      for (const field of ['start','end']) if($(field).value) query.set(field,new Date($(field).value).toISOString());
-      positions=await getJson('/trackers/'+encodeURIComponent(id)+'/positions?'+query.toString());}
-    $('ap-count').textContent=aps.length;
-    $('pos-count').textContent=positions.length;
-    const last=positions[positions.length-1];
-    $('last-pos').textContent=last ? `(${last.x}, ${last.y})` : '—';
-    $('last-time').textContent=last ? new Date(last.estimated_at).toLocaleString('fr-FR') : '—';
-    $('status').textContent=aps.length ? 'Données chargées. Actualisez pour voir les nouveaux relevés.' : 'Aucun point d’accès connu : ajoutez les BSSID et leurs coordonnées via l’API.';
-    redraw();
-  } catch(e){$('status').textContent='Erreur : '+e.message;}
+  const id=$('tracker').value;
+  positions=[];
+  if (id) {
+    const query=new URLSearchParams({limit:'10000'});
+    for (const field of ['start','end']) if ($(field).value) query.set(field,new Date($(field).value).toISOString());
+    positions=await api(`/trackers/${encodeURIComponent(id)}/positions?${query}`);
+  }
+  renderPositions();
 }
-$('refresh').addEventListener('click',refresh);
-$('tracker').addEventListener('change',loadPositions);
-$('start').addEventListener('change',loadPositions);
-$('end').addEventListener('change',loadPositions);
-window.addEventListener('resize',redraw);
-refresh();
+async function refresh(all=true) {
+  try {
+    if (all) {
+      const old=$('tracker').value;
+      const [points,trackers]=await Promise.all([api('/access-points'),api('/trackers')]);
+      aps=points;
+      $('tracker').replaceChildren(new Option('Aucun tracker',''));
+      for (const item of trackers) $('tracker').add(new Option(`${item.tracker_id} (${item.scan_count} scans)`,item.tracker_id));
+      $('tracker').value=trackers.some(t=>t.tracker_id===old)?old:(trackers[0]?.tracker_id||'');
+      if (selectedBssid && !aps.find(p=>p.bssid===selectedBssid)) resetForm();
+      renderAPs();
+    }
+    await loadPositions();
+    const legacy=positions.filter(p=>!coordsValid(p)).length;
+    status(`Données chargées : ${aps.filter(coordsValid).length} point(s) sur la carte, ${positions.length-legacy} position(s) géographiques.${legacy?' '+legacy+' ancienne(s) position(s) X/Y conservée(s), mais non affichable(s) sur la carte.':''}`);
+  } catch(e) { status('Impossible de charger les données : '+e.message,'error'); }
+}
+function fitAll() {
+  const pts=[...aps.filter(coordsValid),...positions.filter(coordsValid)].map(p=>[p.latitude,p.longitude]);
+  if (!pts.length) {map.setView(FRANCE,6);return;}
+  map.fitBounds(L.latLngBounds(pts).pad(.2),{maxZoom:16});
+}
+async function saveAP(event) {
+  event.preventDefault();
+  const bssid=$('bssid').value.trim().replaceAll('-',':').toUpperCase();
+  const latitude=Number($('latitude').value),longitude=Number($('longitude').value);
+  if (!$('latitude').value || !$('longitude').value) {status('Choisissez un emplacement en cliquant sur la carte.','error');return;}
+  if (!/^([0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(bssid)) {status('Le BSSID doit être au format AA:BB:CC:DD:EE:FF.','error');return;}
+  if (!Number.isFinite(latitude)||Math.abs(latitude)>90||!Number.isFinite(longitude)||Math.abs(longitude)>180) {status('Coordonnées GPS invalides.','error');return;}
+  $('save').disabled=true;
+  try {
+    await api('/access-points',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ssid:$('ssid').value.trim(),bssid,latitude,longitude})});
+    const points=await api('/access-points');aps=points;
+    const updated=aps.find(a=>a.bssid===bssid);
+    if (updated) selectAP(updated,false);
+    clearDraft();renderAPs();
+    status(`Point d'accès ${bssid} enregistré dans SQLite à ${latitude.toFixed(6)}, ${longitude.toFixed(6)}.`,'success');
+  } catch(e) {status('Enregistrement impossible : '+e.message,'error');}
+  finally {$('save').disabled=false;}
+}
+async function deleteAP() {
+  if (!selectedBssid || !confirm(`Supprimer le point d'accès ${selectedBssid} ?`)) return;
+  const bssid=selectedBssid;
+  try {
+    await api('/access-points/'+encodeURIComponent(bssid),{method:'DELETE'});
+    aps=await api('/access-points');resetForm();renderAPs();
+    status(`Point d'accès ${bssid} supprimé. Les anciens scans et positions restent enregistrés.`,'success');
+  } catch(e) {status('Suppression impossible : '+e.message,'error');}
+}
+function init() {
+  if (typeof L==='undefined') {status('Leaflet ne s’est pas chargé : vérifiez la connexion Internet ou les restrictions réseau.','error');return;}
+  map=L.map('map',{zoomControl:true}).setView(FRANCE,6);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom:19,
+    attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>'
+  }).addTo(map);
+  apLayer=L.layerGroup().addTo(map);routeLayer=L.layerGroup().addTo(map);
+  map.on('click', e=>{setDraft(e.latlng.lat,e.latlng.lng);status('Coordonnées sélectionnées. Renseignez le BSSID et cliquez sur « Enregistrer ».');});
+  $('ap-form').addEventListener('submit',saveAP);
+  $('new').addEventListener('click',()=>{resetForm();status('Nouveau point : cliquez sur la carte pour choisir sa position.');$('ssid').focus();});
+  $('delete').addEventListener('click',deleteAP);
+  $('refresh').addEventListener('click',()=>refresh());
+  $('fit').addEventListener('click',fitAll);
+  $('city').addEventListener('change',()=>{
+    const v=$('city').value;
+    if (!v) {map.setView(FRANCE,6);return;}
+    const [lat,lon,zoom]=v.split(',').map(Number);map.flyTo([lat,lon],zoom,{duration:.6});
+  });
+  $('tracker').addEventListener('change',()=>refresh(false));
+  $('start').addEventListener('change',()=>refresh(false));
+  $('end').addEventListener('change',()=>refresh(false));
+  for (const field of ['latitude','longitude']) $(field).addEventListener('change',()=>{
+    const lat=Number($('latitude').value),lng=Number($('longitude').value);
+    if ($('latitude').value && $('longitude').value && Number.isFinite(lat)&&Number.isFinite(lng)&&Math.abs(lat)<=90&&Math.abs(lng)<=180) setDraft(lat,lng);
+  });
+  refresh();
+}
+init();
 </script>
 </body>
 </html>

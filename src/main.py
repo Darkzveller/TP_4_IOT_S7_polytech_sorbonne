@@ -7,6 +7,7 @@ La localisation est une estimation pédagogique basée sur les RSSI, pas du GPS.
 from __future__ import annotations
 
 import re
+import math
 import sqlite3
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timezone
@@ -15,11 +16,29 @@ from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 ROOT = Path(__file__).resolve().parent
 DB_FILE = ROOT / "tracker.sqlite3"
 BSSID_RE = re.compile(r"^(?:[0-9A-F]{2}:){5}[0-9A-F]{2}$")
+# Repère métrique pédagogique commun à toute la France métropolitaine.
+# Les distances géographiques réelles ne sont pas déduites de ce repère :
+# il sert seulement à conserver la compatibilité avec les anciennes colonnes x/y.
+FRANCE_ORIGIN_LAT = 46.603354
+FRANCE_ORIGIN_LON = 1.888334
+EARTH_RADIUS_M = 6_371_000.0
+
+
+def gps_to_xy(latitude: float, longitude: float) -> tuple[float, float]:
+    x = EARTH_RADIUS_M * math.radians(longitude - FRANCE_ORIGIN_LON) * math.cos(math.radians(FRANCE_ORIGIN_LAT))
+    y = EARTH_RADIUS_M * math.radians(latitude - FRANCE_ORIGIN_LAT)
+    return x, y
+
+
+def xy_to_gps(x: float, y: float) -> tuple[float, float]:
+    latitude = FRANCE_ORIGIN_LAT + math.degrees(y / EARTH_RADIUS_M)
+    longitude = FRANCE_ORIGIN_LON + math.degrees(x / (EARTH_RADIUS_M * math.cos(math.radians(FRANCE_ORIGIN_LAT))))
+    return latitude, longitude
 
 
 def now_utc() -> str:
@@ -78,6 +97,12 @@ def init_database() -> None:
             CREATE INDEX IF NOT EXISTS idx_positions_tracker ON positions(tracker_id, estimated_at);
             """
         )
+        # Migration non destructive d'une ancienne base (x/y uniquement).
+        for table in ("access_points", "positions"):
+            columns = {row["name"] for row in db.execute(f"PRAGMA table_info({table})")}
+            for column in ("latitude", "longitude"):
+                if column not in columns:
+                    db.execute(f"ALTER TABLE {table} ADD COLUMN {column} REAL")
 
 
 @asynccontextmanager
@@ -104,8 +129,25 @@ def normalize_bssid(value: str) -> str:
 class AccessPoint(BaseModel):
     bssid: str
     ssid: str = Field(default="", max_length=128)
-    x: float = Field(ge=-1_000_000, le=1_000_000)
-    y: float = Field(ge=-1_000_000, le=1_000_000)
+    # Ancien format : coordonnées X/Y locales en mètres.
+    x: float | None = Field(default=None, ge=-1_000_000, le=1_000_000)
+    y: float | None = Field(default=None, ge=-1_000_000, le=1_000_000)
+    # Nouveau format : point choisi sur la carte OpenStreetMap.
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+
+    @model_validator(mode="after")
+    def valid_coordinates(self):
+        if (self.x is None) != (self.y is None):
+            raise ValueError("x et y doivent être fournis ensemble")
+        if (self.latitude is None) != (self.longitude is None):
+            raise ValueError("latitude et longitude doivent être fournies ensemble")
+        if self.latitude is None and self.x is None:
+            raise ValueError("Fournir latitude/longitude ou x/y")
+        if self.latitude is not None:
+            # Priorité au GPS : x/y dérivés pour la compatibilité SQL existante.
+            self.x, self.y = gps_to_xy(self.latitude, self.longitude)
+        return self
 
     @field_validator("bssid")
     @classmethod
@@ -130,10 +172,10 @@ class Scan(BaseModel):
 
 
 def estimate_position(readings: list[Observation], known: dict) -> dict | None:
-    """Barycentre pondéré selon une distance RSSI *approximative*.
+    """Estimation RSSI pédagogique, pas une triangulation ni une position GPS mesurée.
 
-    Hypothèses d'exemple : puissance à 1 m = -45 dBm, exposant n = 3.
-    Chaque point d'accès identifié par son BSSID contribue au plus une fois.
+    Ne mélange pas les vieux AP en x/y local avec ceux placés sur une carte GPS.
+    Si au moins un AP géoréférencé est détecté, on calcule dans leur seul repère.
     """
     strongest = {}
     for r in readings:
@@ -143,19 +185,31 @@ def estimate_position(readings: list[Observation], known: dict) -> dict | None:
             strongest[r.bssid] = r
     if not strongest:
         return None
+
+    geocoded = {
+        bssid: reading for bssid, reading in strongest.items()
+        if known[bssid]["latitude"] is not None and known[bssid]["longitude"] is not None
+    }
+    selected = geocoded if geocoded else strongest
     xw = yw = total = 0.0
-    for bssid, reading in strongest.items():
+    for bssid, reading in selected.items():
         ap = known[bssid]
         distance_m = min(60.0, max(1.0, 10 ** ((-45 - reading.rssi) / 30.0)))
         weight = 1.0 / (distance_m * distance_m)
         xw += ap["x"] * weight
         yw += ap["y"] * weight
         total += weight
+    x, y = xw / total, yw / total
+    latitude = longitude = None
+    if geocoded:
+        latitude, longitude = xy_to_gps(x, y)
     return {
-        "x": round(xw / total, 2),
-        "y": round(yw / total, 2),
-        "ap_count": len(strongest),
-        "method": "weighted_centroid_rssi",
+        "x": round(x, 2),
+        "y": round(y, 2),
+        "latitude": round(latitude, 7) if latitude is not None else None,
+        "longitude": round(longitude, 7) if longitude is not None else None,
+        "ap_count": len(selected),
+        "method": "weighted_centroid_rssi_geo" if geocoded else "weighted_centroid_rssi",
     }
 
 
@@ -185,12 +239,13 @@ def list_access_points():
 def save_access_point(ap: AccessPoint):
     with database() as db:
         db.execute(
-            """INSERT INTO access_points(bssid, ssid, x, y, updated_at)
-               VALUES (?, ?, ?, ?, ?)
+            """INSERT INTO access_points(bssid, ssid, x, y, latitude, longitude, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(bssid) DO UPDATE SET
                ssid=excluded.ssid, x=excluded.x, y=excluded.y,
+               latitude=excluded.latitude, longitude=excluded.longitude,
                updated_at=excluded.updated_at""",
-            (ap.bssid, ap.ssid, ap.x, ap.y, now_utc()),
+            (ap.bssid, ap.ssid, ap.x, ap.y, ap.latitude, ap.longitude, now_utc()),
         )
     return {"saved": True, **ap.model_dump()}
 
@@ -224,17 +279,20 @@ def receive_scan(scan: Scan):
         bssids = tuple({r.bssid for r in scan.readings})
         placeholders = ",".join("?" for _ in bssids)
         aps = db.execute(
-            f"SELECT bssid, x, y FROM access_points WHERE bssid IN ({placeholders})",
+            f"SELECT bssid, x, y, latitude, longitude FROM access_points WHERE bssid IN ({placeholders})",
             bssids,
         ).fetchall()
         known = {r["bssid"]: dict(r) for r in aps}
         position = estimate_position(scan.readings, known)
         if position is not None:
             db.execute(
-                """INSERT INTO positions(scan_id, tracker_id, x, y, ap_count, method, estimated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                """INSERT INTO positions(
+                       scan_id, tracker_id, x, y, latitude, longitude,
+                       ap_count, method, estimated_at
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     scan_id, scan.tracker_id, position["x"], position["y"],
+                    position["latitude"], position["longitude"],
                     position["ap_count"], position["method"], scanned_at,
                 ),
             )
@@ -308,7 +366,8 @@ def get_positions(
     start_iso, end_iso = to_utc_iso(start), to_utc_iso(end)
     if start_iso and end_iso and start_iso > end_iso:
         raise HTTPException(422, "La date de début doit précéder la date de fin")
-    sql = """SELECT id, scan_id, tracker_id, x, y, ap_count, method, estimated_at
+    sql = """SELECT id, scan_id, tracker_id, x, y, latitude, longitude,
+                    ap_count, method, estimated_at
              FROM positions WHERE tracker_id=?"""
     args = [tracker_id]
     if start_iso:
